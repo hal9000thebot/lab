@@ -226,7 +226,8 @@ function App() {
               <div className="muted">Create a template first (Templates tab).</div>
             )}
 
-            {lastSessionSummary && (
+            {/* Hide last-session summary while a new session is being recorded to reduce clutter. */}
+            {!sessionDraft && lastSessionSummary && (
               <div className="card" style={{ padding: 12, marginTop: 6 }}>
                 <div className="row" style={{ justifyContent: 'space-between' }}>
                   <strong>Your last session</strong>
