@@ -5,7 +5,7 @@ import type { SessionExerciseEntry, SetEntry, WorkoutSession, WorkoutTemplate } 
 import { exportJson, exportSessionsCsv } from './export';
 import { ProgressView } from './ProgressView';
 import { useWorkoutStore } from './storeHook';
-import { clampInt, nowIso, parseNumberOrNull, setVolumeKg, todayISODate, uid } from './utils';
+import { clampInt, formatKg, nowIso, parseNumberOrNull, setVolumeKg, todayISODate, uid } from './utils';
 
 import {
   Dumbbell,
@@ -151,6 +151,26 @@ function App() {
 
   function renderTrack() {
     const canStart = Boolean(activeTemplate);
+    const lastSession = store.sessions[0];
+
+    const lastSessionSummary = (() => {
+      if (!lastSession) return null;
+      const perExercise = lastSession.entries.map(e => {
+        const volume = e.sets.reduce((sum, s) => sum + setVolumeKg(s), 0);
+        const top = e.sets.reduce(
+          (best, cur) => {
+            const w = cur.weightKg ?? 0;
+            if (w > best.weight) return { weight: w, reps: cur.reps ?? 0 };
+            return best;
+          },
+          { weight: 0, reps: 0 }
+        );
+        return { name: e.exerciseName, volume, top };
+      });
+      perExercise.sort((a, b) => b.volume - a.volume);
+      const total = perExercise.reduce((s, x) => s + x.volume, 0);
+      return { total, perExercise };
+    })();
 
     return (
       <div className="grid" style={{ gap: 14 }}>
@@ -193,6 +213,37 @@ function App() {
 
             {templatesSorted.length === 0 && (
               <div className="muted">Create a template first (Templates tab).</div>
+            )}
+
+            {lastSessionSummary && (
+              <div className="card" style={{ padding: 12, marginTop: 6 }}>
+                <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <strong>Your last session</strong>
+                  <span className="badge">{lastSession.templateName} · {lastSession.dateISO}</span>
+                </div>
+                <div className="muted" style={{ marginTop: 6 }}>
+                  Total volume: {Math.round(lastSessionSummary.total)} kg·reps
+                </div>
+
+                <div className="grid" style={{ marginTop: 10, gap: 8 }}>
+                  {lastSessionSummary.perExercise.slice(0, 4).map(ex => (
+                    <div key={ex.name} className="row" style={{ justifyContent: 'space-between', gap: 10 }}>
+                      <div>
+                        <div style={{ fontWeight: 650 }}>{ex.name}</div>
+                        <div className="muted" style={{ fontSize: 13 }}>
+                          {Math.round(ex.volume)} kg·reps
+                          {ex.top.weight ? ` · top ${formatKg(ex.top.weight)}×${ex.top.reps}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {lastSessionSummary.perExercise.length > 4 && (
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      +{lastSessionSummary.perExercise.length - 4} more exercises
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </div>
