@@ -6,8 +6,24 @@ import { ProgressView } from './ProgressView';
 import { useWorkoutStore } from './storeHook';
 import { clampInt, nowIso, parseNumberOrNull, setVolumeKg, todayISODate, uid } from './utils';
 
+import {
+  Dumbbell,
+  ListTodo,
+  Rows3,
+  TrendingUp,
+  Download
+} from 'lucide-react';
+
 const TABS = ['Track', 'Templates', 'Exercises', 'Progress', 'Export'] as const;
 type Tab = (typeof TABS)[number];
+
+const TAB_META: Record<Tab, { label: string; Icon: typeof Dumbbell }> = {
+  Track: { label: 'Track', Icon: Dumbbell },
+  Templates: { label: 'Templates', Icon: ListTodo },
+  Exercises: { label: 'Exercises', Icon: Rows3 },
+  Progress: { label: 'Progress', Icon: TrendingUp },
+  Export: { label: 'Export', Icon: Download }
+};
 
 function sortByName<T extends { name: string }>(items: T[]) {
   return [...items].sort((a, b) => a.name.localeCompare(b.name));
@@ -565,11 +581,15 @@ function App() {
 
       <div className="nav">
         <div className="nav-inner">
-          {TABS.map(t => (
-            <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
-              {t}
-            </button>
-          ))}
+          {TABS.map(t => {
+            const Icon = TAB_META[t].Icon;
+            return (
+              <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
+                <Icon />
+                <div>{TAB_META[t].label}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </>
