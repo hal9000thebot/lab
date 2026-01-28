@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import { GymBroLogo } from './GymBroLogo';
 import type { SessionExerciseEntry, SetEntry, WorkoutSession, WorkoutTemplate } from './models';
@@ -65,6 +65,17 @@ function App() {
 
   const templatesSorted = useMemo(() => sortByName(store.templates), [store.templates]);
   const exercisesSorted = useMemo(() => sortByName(store.exercises), [store.exercises]);
+
+  // If store changes (e.g. after Import), ensure we have a valid selected template.
+  useEffect(() => {
+    if (store.templates.length === 0) {
+      if (activeTemplateId) setActiveTemplateId('');
+      return;
+    }
+    const exists = store.templates.some(t => t.id === activeTemplateId);
+    if (!exists) setActiveTemplateId(store.templates[0]!.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.templates.length, store.templates.map(t => t.id).join('|')]);
 
   const sessionsByTemplate = useMemo(() => {
     const m = new Map<string, WorkoutSession[]>();
