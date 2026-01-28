@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'Workout Tracker',
-        short_name: 'Workouts',
-        description: 'Local-first workout tracking (templates, sessions, progress).',
+        name: 'GymBro',
+        short_name: 'GymBro',
+        description: 'Minimal workout log (templates, sessions, progress).',
         theme_color: '#0b0f14',
         background_color: '#0b0f14',
         display: 'standalone',

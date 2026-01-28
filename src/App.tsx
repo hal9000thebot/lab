@@ -12,7 +12,9 @@ import {
   ListTodo,
   Rows3,
   TrendingUp,
-  Download
+  Download,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 const TABS = ['Track', 'Templates', 'Exercises', 'Progress', 'Export'] as const;
@@ -152,16 +154,6 @@ function App() {
 
     return (
       <div className="grid" style={{ gap: 14 }}>
-        <div className="appTop">
-          <div className="appTopMark" aria-hidden="true">
-            <GymBroLogo size={30} />
-          </div>
-          <div className="appTopText">
-            <div className="appName">GymBro</div>
-            <div className="appTag">minimal workout log (no bro-science)</div>
-          </div>
-        </div>
-
         <div className="card">
           <h1>Track Workout</h1>
           <div className="grid" style={{ gap: 10 }}>
@@ -457,29 +449,24 @@ function App() {
           {templatesSorted.length === 0 ? (
             <div className="muted">No templates yet.</div>
           ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Exercises</th>
-                  <th style={{ width: 180 }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {templatesSorted.map(t => (
-                  <tr key={t.id}>
-                    <td>{t.name}</td>
-                    <td className="muted">{t.exerciseRows.length}</td>
-                    <td>
-                      <div className="row">
-                        <button onClick={() => initTemplateEditor(t)}>Edit</button>
-                        <button className="danger" onClick={() => api.deleteTemplate(t.id)}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="list" style={{ marginTop: 8 }}>
+              {templatesSorted.map(t => (
+                <div key={t.id} className="listRow">
+                  <div>
+                    <div className="listTitle">{t.name}</div>
+                    <div className="listSub">{t.exerciseRows.length} exercises</div>
+                  </div>
+                  <div className="row" style={{ gap: 8 }}>
+                    <button className="iconBtn" onClick={() => initTemplateEditor(t)} aria-label="Edit template">
+                      <Pencil size={18} />
+                    </button>
+                    <button className="iconBtn danger" onClick={() => api.deleteTemplate(t.id)} aria-label="Delete template">
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -583,6 +570,16 @@ function App() {
   return (
     <>
       <div className="container">
+        <div className="appTop">
+          <div className="appTopMark" aria-hidden="true">
+            <GymBroLogo size={30} />
+          </div>
+          <div className="appTopText">
+            <div className="appName">GymBro</div>
+            <div className="appTag">minimal workout log (no bro-science)</div>
+          </div>
+        </div>
+
         {tab === 'Track' && renderTrack()}
         {tab === 'Templates' && renderTemplates()}
         {tab === 'Exercises' && renderExercises()}
