@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import './App.css';
+import { GymBroLogo } from './GymBroLogo';
 import type { SessionExerciseEntry, SetEntry, WorkoutSession, WorkoutTemplate } from './models';
 import { exportJson, exportSessionsCsv } from './export';
 import { ProgressView } from './ProgressView';
@@ -151,8 +152,18 @@ function App() {
 
     return (
       <div className="grid" style={{ gap: 14 }}>
+        <div className="appTop">
+          <div className="appTopMark" aria-hidden="true">
+            <GymBroLogo size={30} />
+          </div>
+          <div className="appTopText">
+            <div className="appName">GymBro</div>
+            <div className="appTag">minimal workout log (no bro-science)</div>
+          </div>
+        </div>
+
         <div className="card">
-          <h1>Track</h1>
+          <h1>Track Workout</h1>
           <div className="grid" style={{ gap: 10 }}>
             <div>
               <div className="muted">Date</div>
