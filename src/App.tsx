@@ -477,9 +477,9 @@ function App() {
     );
   }
 
-  function renderExport() {
-    const importInputRef = useRef<HTMLInputElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
+  function renderExport() {
     const onImportJson = async (file: File) => {
       const text = await file.text();
       let parsed: unknown;
