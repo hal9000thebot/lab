@@ -478,14 +478,56 @@ function App() {
   }
 
   function renderExport() {
+    const onImportJson = async (file: File) => {
+      const text = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        alert('Invalid JSON file.');
+        return;
+      }
+
+      // Very small schema check.
+      const obj = parsed as any;
+      if (!obj || obj.version !== 1 || !Array.isArray(obj.exercises) || !Array.isArray(obj.templates) || !Array.isArray(obj.sessions)) {
+        alert('This does not look like a valid export from this app (expected version=1).');
+        return;
+      }
+
+      const ok = confirm('Import will REPLACE all current data on this device. Continue?');
+      if (!ok) return;
+
+      // Backup current first.
+      exportJson(store);
+
+      api.setStore(() => obj);
+      alert('Import complete.');
+    };
+
     return (
       <div className="grid" style={{ gap: 14 }}>
         <div className="card">
-          <h1>Export</h1>
+          <h1>Export / Import</h1>
           <div className="muted">All data lives in your browser Local Storage on this device.</div>
           <div className="row wrap" style={{ marginTop: 12 }}>
             <button className="primary" onClick={() => exportJson(store)}>Export JSON</button>
             <button className="primary" onClick={() => exportSessionsCsv(store.sessions)}>Export sessions CSV</button>
+
+            <label style={{ display: 'inline-block' }}>
+              <input
+                type="file"
+                accept="application/json,.json"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) void onImportJson(file);
+                  // reset input so selecting the same file again works
+                  e.currentTarget.value = '';
+                }}
+              />
+              <button className="primary" type="button">Import JSON (replace)</button>
+            </label>
           </div>
         </div>
 
@@ -494,7 +536,8 @@ function App() {
           <ul className="muted" style={{ margin: 0, paddingLeft: 18 }}>
             <li>Local-only prototype: data doesn’t sync between devices.</li>
             <li>CSV export is per-set rows (good for analysis in Sheets).</li>
-            <li>Next upgrades: installable PWA + cloud sync + charts.</li>
+            <li>Import replaces local data on this device (we auto-export a backup first).</li>
+            <li>Next upgrades: charts + optional cloud sync.</li>
           </ul>
         </div>
       </div>
