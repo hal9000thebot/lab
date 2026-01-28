@@ -41,7 +41,7 @@ a { color: inherit; }
   max-width: 720px;
   margin: 0 auto;
   padding: 18px 16px;
-  padding-bottom: 96px;
+  padding-bottom: 116px; /* leave room for floating nav */
 }
 
 .appTop {
@@ -95,11 +95,21 @@ h2 {
 }
 
 .card {
-  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
-  border: 1px solid var(--border);
+  /* Liquid glass */
+  background:
+    radial-gradient(120% 120% at 10% 0%, rgba(255,255,255,0.16), rgba(255,255,255,0.06) 45%, rgba(255,255,255,0.03) 70%),
+    linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-top-color: rgba(255, 255, 255, 0.18);
+  border-left-color: rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-xl);
   padding: 18px;
-  box-shadow: var(--shadow-card);
+  box-shadow:
+    0 18px 60px rgba(0,0,0,0.55),
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -1px 0 rgba(0,0,0,0.35);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
 }
 
 .cardHeader {
@@ -148,13 +158,18 @@ button {
 }
 
 button.primary {
-  background: rgba(20,184,166,0.75);
+  background:
+    radial-gradient(120% 120% at 20% 0%, rgba(255,255,255,0.35), rgba(255,255,255,0.0) 45%),
+    linear-gradient(180deg, rgba(20,184,166,0.95), rgba(20,184,166,0.65));
   border-color: rgba(20,184,166,0.55);
-  color: #06211e;
-  font-weight: 700;
+  color: #041a17;
+  font-weight: 800;
+  box-shadow:
+    0 12px 30px rgba(20,184,166,0.14),
+    inset 0 1px 0 rgba(255,255,255,0.25);
 }
 
-button.primary:hover { filter: brightness(1.02); }
+button.primary:hover { filter: brightness(1.03); }
 
 button.danger {
   background: var(--danger-weak);
@@ -242,12 +257,10 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .nav {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(10,10,10,0.92);
-  backdrop-filter: blur(14px);
-  border-top: 1px solid var(--border);
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 50;
 }
 
 .nav-inner {
@@ -255,6 +268,17 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 120% at 10% 0%, rgba(255,255,255,0.16), rgba(255,255,255,0.06) 40%, rgba(255,255,255,0.03) 70%),
+    rgba(10,10,10,0.55);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow:
+    0 18px 60px rgba(0,0,0,0.60),
+    inset 0 1px 0 rgba(255,255,255,0.10);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  overflow: hidden;
 }
 
 .nav button {
