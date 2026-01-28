@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import './App.css';
 import type { SessionExerciseEntry, SetEntry, WorkoutSession, WorkoutTemplate } from './models';
 import { exportJson, exportSessionsCsv } from './export';
@@ -478,6 +478,8 @@ function App() {
   }
 
   function renderExport() {
+    const importInputRef = useRef<HTMLInputElement | null>(null);
+
     const onImportJson = async (file: File) => {
       const text = await file.text();
       let parsed: unknown;
@@ -514,20 +516,27 @@ function App() {
             <button className="primary" onClick={() => exportJson(store)}>Export JSON</button>
             <button className="primary" onClick={() => exportSessionsCsv(store.sessions)}>Export sessions CSV</button>
 
-            <label style={{ display: 'inline-block' }}>
-              <input
-                type="file"
-                accept="application/json,.json"
-                style={{ display: 'none' }}
-                onChange={e => {
-                  const file = e.target.files?.[0];
-                  if (file) void onImportJson(file);
-                  // reset input so selecting the same file again works
-                  e.currentTarget.value = '';
-                }}
-              />
-              <button className="primary" type="button">Import JSON (replace)</button>
-            </label>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              // iOS PWA often ignores programmatic clicks on `display:none` inputs
+              // so we keep it off-screen but present.
+              style={{ position: 'absolute', left: -10000, width: 1, height: 1, opacity: 0 }}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) void onImportJson(file);
+                // reset input so selecting the same file again works
+                e.currentTarget.value = '';
+              }}
+            />
+            <button
+              className="primary"
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+            >
+              Import JSON (replace)
+            </button>
           </div>
         </div>
 
