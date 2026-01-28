@@ -1,0 +1,3 @@
+/* base styles handled in App.css; keep this minimal */
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }

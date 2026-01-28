@@ -1,0 +1,527 @@
+import { useMemo, useState } from 'react';
+import './App.css';
+import type { SessionExerciseEntry, SetEntry, WorkoutSession, WorkoutTemplate } from './models';
+import { exportJson, exportSessionsCsv } from './export';
+import { ProgressView } from './ProgressView';
+import { useWorkoutStore } from './storeHook';
+import { clampInt, nowIso, parseNumberOrNull, setVolumeKg, todayISODate, uid } from './utils';
+
+const TABS = ['Track', 'Templates', 'Exercises', 'Progress', 'Export'] as const;
+type Tab = (typeof TABS)[number];
+
+function sortByName<T extends { name: string }>(items: T[]) {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function findLastSessionForTemplate(sessions: WorkoutSession[], templateId: string) {
+  return sessions
+    .filter(s => s.templateId === templateId)
+    .sort((a, b) => b.dateISO.localeCompare(a.dateISO))[0];
+}
+
+function App() {
+  const api = useWorkoutStore();
+  const { store } = api;
+
+  const [tab, setTab] = useState<Tab>('Track');
+
+  // Track state
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(() => store.templates[0]?.id ?? '');
+  const activeTemplate = api.getTemplateById(activeTemplateId);
+
+  const [sessionDraft, setSessionDraft] = useState<WorkoutSession | null>(null);
+  const [trackDate, setTrackDate] = useState(todayISODate());
+
+  const exercisesById = useMemo(() => new Map(store.exercises.map(e => [e.id, e])), [store.exercises]);
+
+  // Editing state for exercises
+  const [exerciseForm, setExerciseForm] = useState<{ id?: string; name: string; notes?: string }>({ name: '' });
+
+  // Editing state for templates
+  const [templateEditor, setTemplateEditor] = useState<{
+    id?: string;
+    name: string;
+    rows: { id: string; exerciseId: string; setsPlanned: number; targetReps: string }[];
+  }>({ name: '', rows: [] });
+
+  const templatesSorted = useMemo(() => sortByName(store.templates), [store.templates]);
+  const exercisesSorted = useMemo(() => sortByName(store.exercises), [store.exercises]);
+
+  const sessionsByTemplate = useMemo(() => {
+    const m = new Map<string, WorkoutSession[]>();
+    for (const s of store.sessions) {
+      if (!m.has(s.templateId)) m.set(s.templateId, []);
+      m.get(s.templateId)!.push(s);
+    }
+    for (const [, arr] of m) arr.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
+    return m;
+  }, [store.sessions]);
+
+  function startSessionFromTemplate(template: WorkoutTemplate) {
+    const last = findLastSessionForTemplate(store.sessions, template.id);
+
+    const entries: SessionExerciseEntry[] = template.exerciseRows
+      .map(row => {
+        const ex = exercisesById.get(row.exerciseId);
+        if (!ex) return null;
+
+        const sets: SetEntry[] = Array.from({ length: clampInt(row.setsPlanned, 1, 20) }).map(() => ({ reps: null, weightKg: null }));
+
+        // Optionally copy last session values for that exercise.
+        const prev = last?.entries.find(e => e.exerciseId === row.exerciseId);
+        if (prev) {
+          prev.sets.slice(0, sets.length).forEach((s, idx) => {
+            sets[idx] = { reps: s.reps, weightKg: s.weightKg };
+          });
+        }
+
+        return {
+          exerciseId: row.exerciseId,
+          exerciseName: ex.name,
+          targetReps: row.targetReps,
+          sets
+        };
+      })
+      .filter(Boolean) as SessionExerciseEntry[];
+
+    const ts = nowIso();
+    setSessionDraft({
+      id: uid(),
+      dateISO: trackDate,
+      templateId: template.id,
+      templateName: template.name,
+      entries,
+      createdAt: ts,
+      updatedAt: ts
+    });
+  }
+
+  function saveDraftSession() {
+    if (!sessionDraft) return;
+    // Normalize: empty strings -> null already.
+    api.addSession({
+      id: sessionDraft.id,
+      dateISO: sessionDraft.dateISO,
+      templateId: sessionDraft.templateId,
+      templateName: sessionDraft.templateName,
+      entries: sessionDraft.entries
+    });
+
+    setSessionDraft(null);
+    setTab('Progress');
+  }
+
+  function updateDraftEntry(exerciseIndex: number, setIndex: number, field: 'reps' | 'weightKg', value: string) {
+    if (!sessionDraft) return;
+    setSessionDraft(d => {
+      if (!d) return d;
+      const entries = d.entries.map((e, idx) => {
+        if (idx !== exerciseIndex) return e;
+        const sets = e.sets.map((s, sIdx) => {
+          if (sIdx !== setIndex) return s;
+          const next = { ...s };
+          if (field === 'reps') next.reps = parseNumberOrNull(value);
+          if (field === 'weightKg') next.weightKg = parseNumberOrNull(value);
+          return next;
+        });
+        return { ...e, sets };
+      });
+      return { ...d, entries };
+    });
+  }
+
+  function renderTrack() {
+    const canStart = Boolean(activeTemplate);
+
+    return (
+      <div className="grid" style={{ gap: 14 }}>
+        <div className="card">
+          <h1>Track</h1>
+          <div className="grid" style={{ gap: 10 }}>
+            <div>
+              <div className="muted">Date</div>
+              <input value={trackDate} onChange={e => setTrackDate(e.target.value)} placeholder="YYYY-MM-DD" />
+            </div>
+
+            <div>
+              <div className="muted">Workout template</div>
+              <select
+                value={activeTemplateId}
+                onChange={e => setActiveTemplateId(e.target.value)}
+              >
+                {templatesSorted.length === 0 ? (
+                  <option value="">No templates yet</option>
+                ) : (
+                  templatesSorted.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="row wrap">
+              <button
+                className="primary"
+                disabled={!canStart}
+                onClick={() => activeTemplate && startSessionFromTemplate(activeTemplate)}
+              >
+                Start session
+              </button>
+              {activeTemplate && store.sessions.some(s => s.templateId === activeTemplate.id) && (
+                <span className="pill">Prefills from last session</span>
+              )}
+            </div>
+
+            {templatesSorted.length === 0 && (
+              <div className="muted">Create a template first (Templates tab).</div>
+            )}
+          </div>
+        </div>
+
+        {sessionDraft && (
+          <div className="card">
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0 }}>Session draft</h2>
+              <span className="badge">{sessionDraft.templateName} · {sessionDraft.dateISO}</span>
+            </div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Enter reps + weight (kg). You can review and edit before saving.
+            </div>
+
+            <div className="grid" style={{ marginTop: 12, gap: 12 }}>
+              {sessionDraft.entries.map((entry, eIdx) => (
+                <div key={entry.exerciseId} className="card" style={{ padding: 12 }}>
+                  <div className="row wrap" style={{ justifyContent: 'space-between' }}>
+                    <strong>{entry.exerciseName}</strong>
+                    {entry.targetReps && <span className="badge">Target: {entry.targetReps}</span>}
+                  </div>
+
+                  <div className="grid" style={{ gap: 8, marginTop: 10 }}>
+                    {entry.sets.map((set, sIdx) => (
+                      <div className="setRow" key={sIdx}>
+                        <span className="badge">Set {sIdx + 1}</span>
+                        <input
+                          inputMode="numeric"
+                          placeholder="Reps"
+                          value={set.reps ?? ''}
+                          onChange={e => updateDraftEntry(eIdx, sIdx, 'reps', e.target.value)}
+                        />
+                        <input
+                          inputMode="decimal"
+                          placeholder="kg"
+                          value={set.weightKg ?? ''}
+                          onChange={e => updateDraftEntry(eIdx, sIdx, 'weightKg', e.target.value)}
+                        />
+                      </div>
+                    ))}
+
+                    <div className="muted">
+                      Volume: {Math.round(entry.sets.reduce((sum, s) => sum + setVolumeKg(s), 0))} kg·reps
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="row wrap" style={{ marginTop: 14 }}>
+              <button className="primary" onClick={saveDraftSession}>Save session</button>
+              <button className="danger" onClick={() => setSessionDraft(null)}>Discard</button>
+              <span className="muted">You can edit saved sessions from Progress.</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderExercises() {
+    return (
+      <div className="grid" style={{ gap: 14 }}>
+        <div className="card">
+          <h1>Exercises</h1>
+          <div className="muted">Reusable exercise library (used by workout templates).</div>
+          <div className="grid" style={{ marginTop: 10, gap: 10 }}>
+            <div className="grid two">
+              <input
+                placeholder="Exercise name (e.g. Back squat)"
+                value={exerciseForm.name}
+                onChange={e => setExerciseForm(f => ({ ...f, name: e.target.value }))}
+              />
+              <div className="row wrap" style={{ justifyContent: 'flex-end' }}>
+                <button
+                  className="primary"
+                  disabled={!exerciseForm.name.trim()}
+                  onClick={() => {
+                    api.upsertExercise({ id: exerciseForm.id, name: exerciseForm.name, notes: exerciseForm.notes });
+                    setExerciseForm({ name: '' });
+                  }}
+                >
+                  {exerciseForm.id ? 'Update' : 'Add'}
+                </button>
+                {exerciseForm.id && (
+                  <button onClick={() => setExerciseForm({ name: '' })}>Cancel</button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Library</h2>
+          {exercisesSorted.length === 0 ? (
+            <div className="muted">No exercises yet.</div>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th style={{ width: 120 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exercisesSorted.map(ex => (
+                  <tr key={ex.id}>
+                    <td>{ex.name}</td>
+                    <td>
+                      <div className="row">
+                        <button onClick={() => setExerciseForm({ id: ex.id, name: ex.name, notes: ex.notes })}>Edit</button>
+                        <button className="danger" onClick={() => api.deleteExercise(ex.id)}>Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function initTemplateEditor(t?: WorkoutTemplate) {
+    if (!t) {
+      setTemplateEditor({ name: '', rows: [] });
+      return;
+    }
+    setTemplateEditor({
+      id: t.id,
+      name: t.name,
+      rows: t.exerciseRows.map(r => ({ id: r.id, exerciseId: r.exerciseId, setsPlanned: r.setsPlanned, targetReps: r.targetReps }))
+    });
+  }
+
+  function addTemplateRow() {
+    const firstEx = exercisesSorted[0]?.id ?? '';
+    setTemplateEditor(ed => ({
+      ...ed,
+      rows: [
+        ...ed.rows,
+        { id: uid(), exerciseId: firstEx, setsPlanned: 3, targetReps: '8-10' }
+      ]
+    }));
+  }
+
+  function updateTemplateRow(rowId: string, patch: Partial<{ exerciseId: string; setsPlanned: number; targetReps: string }>) {
+    setTemplateEditor(ed => ({
+      ...ed,
+      rows: ed.rows.map(r => (r.id === rowId ? { ...r, ...patch } : r))
+    }));
+  }
+
+  function deleteTemplateRow(rowId: string) {
+    setTemplateEditor(ed => ({ ...ed, rows: ed.rows.filter(r => r.id !== rowId) }));
+  }
+
+  function saveTemplate() {
+    const name = templateEditor.name.trim();
+    if (!name) return;
+
+    const ts = nowIso();
+    const tpl: WorkoutTemplate = {
+      id: templateEditor.id ?? uid(),
+      name,
+      exerciseRows: templateEditor.rows
+        .filter(r => r.exerciseId)
+        .map(r => ({
+          id: r.id,
+          exerciseId: r.exerciseId,
+          setsPlanned: clampInt(r.setsPlanned, 1, 20),
+          targetReps: r.targetReps.trim() || ''
+        })),
+      createdAt: ts,
+      updatedAt: ts
+    };
+
+    api.upsertTemplate(tpl);
+    initTemplateEditor(undefined);
+  }
+
+  function renderTemplates() {
+    return (
+      <div className="grid" style={{ gap: 14 }}>
+        <div className="card">
+          <h1>Templates</h1>
+          <div className="muted">Create workouts like “Leg day” with reusable exercises.</div>
+
+          {exercisesSorted.length === 0 && (
+            <div className="muted" style={{ marginTop: 10 }}>
+              Add exercises first (Exercises tab).
+            </div>
+          )}
+
+          <div className="grid" style={{ gap: 10, marginTop: 12 }}>
+            <input
+              placeholder="Workout name (e.g. Leg day)"
+              value={templateEditor.name}
+              onChange={e => setTemplateEditor(ed => ({ ...ed, name: e.target.value }))}
+            />
+
+            <div className="row wrap">
+              <button className="primary" disabled={exercisesSorted.length === 0} onClick={addTemplateRow}>Add exercise</button>
+              <button className="primary" disabled={!templateEditor.name.trim()} onClick={saveTemplate}>{templateEditor.id ? 'Update template' : 'Save template'}</button>
+              {templateEditor.id && <button onClick={() => initTemplateEditor(undefined)}>Cancel</button>}
+            </div>
+
+            {templateEditor.rows.length > 0 && (
+              <div className="grid" style={{ gap: 8 }}>
+                {templateEditor.rows.map(r => (
+                  <div key={r.id} className="card" style={{ padding: 10 }}>
+                    <div className="grid" style={{ gap: 8 }}>
+                      <div>
+                        <div className="muted">Exercise</div>
+                        <select value={r.exerciseId} onChange={e => updateTemplateRow(r.id, { exerciseId: e.target.value })}>
+                          {exercisesSorted.map(ex => (
+                            <option key={ex.id} value={ex.id}>{ex.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid two">
+                        <div>
+                          <div className="muted">Sets</div>
+                          <input
+                            inputMode="numeric"
+                            value={String(r.setsPlanned)}
+                            onChange={e => updateTemplateRow(r.id, { setsPlanned: Number(e.target.value) || 1 })}
+                          />
+                        </div>
+                        <div>
+                          <div className="muted">Target reps</div>
+                          <input
+                            placeholder="e.g. 6-8"
+                            value={r.targetReps}
+                            onChange={e => updateTemplateRow(r.id, { targetReps: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="row" style={{ justifyContent: 'flex-end' }}>
+                        <button className="danger" onClick={() => deleteTemplateRow(r.id)}>Remove</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Saved templates</h2>
+          {templatesSorted.length === 0 ? (
+            <div className="muted">No templates yet.</div>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Exercises</th>
+                  <th style={{ width: 180 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {templatesSorted.map(t => (
+                  <tr key={t.id}>
+                    <td>{t.name}</td>
+                    <td className="muted">{t.exerciseRows.length}</td>
+                    <td>
+                      <div className="row">
+                        <button onClick={() => initTemplateEditor(t)}>Edit</button>
+                        <button className="danger" onClick={() => api.deleteTemplate(t.id)}>Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderProgress() {
+    return (
+      <ProgressView
+        templates={templatesSorted}
+        sessionsByTemplate={sessionsByTemplate}
+        exercisesById={exercisesById as any}
+        getTemplateById={api.getTemplateById}
+        onEditSession={(s) => {
+          setTrackDate(s.dateISO);
+          setActiveTemplateId(s.templateId);
+          setSessionDraft({ ...s });
+          setTab('Track');
+        }}
+        onDeleteSession={(id) => api.deleteSession(id)}
+      />
+    );
+  }
+
+  function renderExport() {
+    return (
+      <div className="grid" style={{ gap: 14 }}>
+        <div className="card">
+          <h1>Export</h1>
+          <div className="muted">All data lives in your browser Local Storage on this device.</div>
+          <div className="row wrap" style={{ marginTop: 12 }}>
+            <button className="primary" onClick={() => exportJson(store)}>Export JSON</button>
+            <button className="primary" onClick={() => exportSessionsCsv(store.sessions)}>Export sessions CSV</button>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Notes</h2>
+          <ul className="muted" style={{ margin: 0, paddingLeft: 18 }}>
+            <li>Local-only prototype: data doesn’t sync between devices.</li>
+            <li>CSV export is per-set rows (good for analysis in Sheets).</li>
+            <li>Next upgrades: installable PWA + cloud sync + charts.</li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="container">
+        {tab === 'Track' && renderTrack()}
+        {tab === 'Templates' && renderTemplates()}
+        {tab === 'Exercises' && renderExercises()}
+        {tab === 'Progress' && renderProgress()}
+        {tab === 'Export' && renderExport()}
+      </div>
+
+      <div className="nav">
+        <div className="nav-inner">
+          {TABS.map(t => (
+            <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+export default App;
