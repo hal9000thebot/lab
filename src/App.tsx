@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import { GymBroLogo } from './GymBroLogo';
-import type { SessionExerciseEntry, SetEntry, WorkoutSession, WorkoutTemplate } from './models';
+import type { WorkoutSession, WorkoutTemplate } from './models';
 import { exportJson, exportSessionsCsv } from './export';
 import { ProgressView } from './ProgressView';
 import { useWorkoutStore } from './storeHook';
@@ -38,6 +38,23 @@ function findLastSessionForTemplate(sessions: WorkoutSession[], templateId: stri
     .sort((a, b) => b.dateISO.localeCompare(a.dateISO))[0];
 }
 
+type DraftSetEntry = { reps: string; weightKg: string };
+type DraftExerciseEntry = {
+  exerciseId: string;
+  exerciseName: string;
+  targetReps: string;
+  sets: DraftSetEntry[];
+};
+type DraftSession = {
+  id: string;
+  dateISO: string;
+  templateId: string;
+  templateName: string;
+  entries: DraftExerciseEntry[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 function App() {
   const api = useWorkoutStore();
   const { store } = api;
@@ -48,7 +65,7 @@ function App() {
   const [activeTemplateId, setActiveTemplateId] = useState<string>(() => store.templates[0]?.id ?? '');
   const activeTemplate = api.getTemplateById(activeTemplateId);
 
-  const [sessionDraft, setSessionDraft] = useState<WorkoutSession | null>(null);
+  const [sessionDraft, setSessionDraft] = useState<DraftSession | null>(null);
   const [trackDate, setTrackDate] = useState(todayISODate());
 
   const exercisesById = useMemo(() => new Map(store.exercises.map(e => [e.id, e])), [store.exercises]);
@@ -90,18 +107,21 @@ function App() {
   function startSessionFromTemplate(template: WorkoutTemplate) {
     const last = findLastSessionForTemplate(store.sessions, template.id);
 
-    const entries: SessionExerciseEntry[] = template.exerciseRows
+    const entries: DraftExerciseEntry[] = template.exerciseRows
       .map(row => {
         const ex = exercisesById.get(row.exerciseId);
         if (!ex) return null;
 
-        const sets: SetEntry[] = Array.from({ length: clampInt(row.setsPlanned, 1, 20) }).map(() => ({ reps: null, weightKg: null }));
+        const sets: DraftSetEntry[] = Array.from({ length: clampInt(row.setsPlanned, 1, 20) }).map(() => ({ reps: '', weightKg: '' }));
 
         // Optionally copy last session values for that exercise.
         const prev = last?.entries.find(e => e.exerciseId === row.exerciseId);
         if (prev) {
           prev.sets.slice(0, sets.length).forEach((s, idx) => {
-            sets[idx] = { reps: s.reps, weightKg: s.weightKg };
+            sets[idx] = {
+              reps: s.reps == null ? '' : String(s.reps),
+              weightKg: s.weightKg == null ? '' : formatKg(s.weightKg)
+            };
           });
         }
 
@@ -112,7 +132,7 @@ function App() {
           sets
         };
       })
-      .filter(Boolean) as SessionExerciseEntry[];
+      .filter(Boolean) as DraftExerciseEntry[];
 
     const ts = nowIso();
     setSessionDraft({
@@ -128,13 +148,21 @@ function App() {
 
   function saveDraftSession() {
     if (!sessionDraft) return;
-    // Normalize: empty strings -> null already.
+
     api.addSession({
       id: sessionDraft.id,
       dateISO: sessionDraft.dateISO,
       templateId: sessionDraft.templateId,
       templateName: sessionDraft.templateName,
-      entries: sessionDraft.entries
+      entries: sessionDraft.entries.map(e => ({
+        exerciseId: e.exerciseId,
+        exerciseName: e.exerciseName,
+        targetReps: e.targetReps,
+        sets: e.sets.map(s => ({
+          reps: parseNumberOrNull(s.reps),
+          weightKg: parseNumberOrNull(s.weightKg)
+        }))
+      }))
     });
 
     setSessionDraft(null);
@@ -150,8 +178,8 @@ function App() {
         const sets = e.sets.map((s, sIdx) => {
           if (sIdx !== setIndex) return s;
           const next = { ...s };
-          if (field === 'reps') next.reps = parseNumberOrNull(value);
-          if (field === 'weightKg') next.weightKg = parseNumberOrNull(value);
+          if (field === 'reps') next.reps = value;
+          if (field === 'weightKg') next.weightKg = value;
           return next;
         });
         return { ...e, sets };
@@ -298,7 +326,7 @@ function App() {
                     ))}
 
                     <div className="muted">
-                      Volume: {Math.round(entry.sets.reduce((sum, s) => sum + setVolumeKg(s), 0))} kg·reps
+                      Volume: {Math.round(entry.sets.reduce((sum, s) => sum + setVolumeKg({ reps: parseNumberOrNull(s.reps), weightKg: parseNumberOrNull(s.weightKg) }), 0))} kg·reps
                     </div>
                   </div>
                 </div>
@@ -546,7 +574,18 @@ function App() {
         onEditSession={(s) => {
           setTrackDate(s.dateISO);
           setActiveTemplateId(s.templateId);
-          setSessionDraft({ ...s });
+          setSessionDraft({
+            ...s,
+            entries: s.entries.map(e => ({
+              exerciseId: e.exerciseId,
+              exerciseName: e.exerciseName,
+              targetReps: e.targetReps ?? '',
+              sets: e.sets.map(set => ({
+                reps: set.reps == null ? '' : String(set.reps),
+                weightKg: set.weightKg == null ? '' : formatKg(set.weightKg)
+              }))
+            }))
+          });
           setTab('Track');
         }}
         onDeleteSession={(id) => api.deleteSession(id)}
