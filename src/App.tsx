@@ -334,8 +334,24 @@ function App() {
             </div>
 
             <div className="row wrap" style={{ marginTop: 14 }}>
-              <button className="primary" onClick={saveDraftSession}>Save session</button>
-              <button className="danger" onClick={() => setSessionDraft(null)}>Discard</button>
+              <button
+                className="primary"
+                onClick={() => {
+                  const ok = confirm('Save this session?');
+                  if (ok) saveDraftSession();
+                }}
+              >
+                Save session
+              </button>
+              <button
+                className="danger"
+                onClick={() => {
+                  const ok = confirm('Discard this draft session?');
+                  if (ok) setSessionDraft(null);
+                }}
+              >
+                Discard
+              </button>
               <span className="muted">You can edit saved sessions from Progress.</span>
             </div>
           </div>
@@ -395,7 +411,15 @@ function App() {
                     <td>
                       <div className="row">
                         <button onClick={() => setExerciseForm({ id: ex.id, name: ex.name, notes: ex.notes })}>Edit</button>
-                        <button className="danger" onClick={() => api.deleteExercise(ex.id)}>Delete</button>
+                        <button
+                          className="danger"
+                          onClick={() => {
+                            const ok = confirm('Delete this exercise? It will also be removed from templates (sessions stay as history).');
+                            if (ok) api.deleteExercise(ex.id);
+                          }}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -551,7 +575,14 @@ function App() {
                     <button className="iconBtn" onClick={() => initTemplateEditor(t)} aria-label="Edit template">
                       <Pencil size={18} />
                     </button>
-                    <button className="iconBtn danger" onClick={() => api.deleteTemplate(t.id)} aria-label="Delete template">
+                    <button
+                      className="iconBtn danger"
+                      onClick={() => {
+                        const ok = confirm('Delete this template and all its sessions on this device?');
+                        if (ok) api.deleteTemplate(t.id);
+                      }}
+                      aria-label="Delete template"
+                    >
                       <Trash2 size={18} />
                     </button>
                   </div>
