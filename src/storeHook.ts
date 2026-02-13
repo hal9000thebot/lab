@@ -94,13 +94,29 @@ export function useWorkoutStore(): StoreApi {
 
   const addSession: StoreApi['addSession'] = session => {
     const ts = nowIso();
-    setStore(s => ({
-      ...s,
-      sessions: [
-        { ...session, id: session.id ?? uid(), createdAt: ts, updatedAt: ts },
-        ...s.sessions
-      ]
-    }));
+    const id = session.id ?? uid();
+    setStore(s => {
+      const existing = s.sessions.find(ss => ss.id === id);
+      if (existing) {
+        // Treat addSession as upsert to avoid duplicate sessions when editing.
+        const next: WorkoutSession = {
+          ...existing,
+          ...session,
+          id,
+          createdAt: existing.createdAt,
+          updatedAt: ts
+        };
+        return {
+          ...s,
+          sessions: s.sessions.map(ss => (ss.id === id ? next : ss))
+        };
+      }
+
+      return {
+        ...s,
+        sessions: [{ ...session, id, createdAt: ts, updatedAt: ts }, ...s.sessions]
+      };
+    });
   };
 
   const updateSession: StoreApi['updateSession'] = (sessionId, updater) => {

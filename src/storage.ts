@@ -13,7 +13,26 @@ export function loadStore(): StoreV1 {
     if (!raw) return emptyStore();
     const parsed = JSON.parse(raw);
     if (parsed?.version !== 1) return emptyStore();
-    return parsed as StoreV1;
+
+    // Defensive: older bugs could create duplicate sessions with the same id.
+    // Deduplicate on load by keeping the most recently updated.
+    const store = parsed as StoreV1;
+    if (Array.isArray(store.sessions)) {
+      const byId = new Map<string, StoreV1['sessions'][number]>();
+      for (const s of store.sessions) {
+        const prev = byId.get(s.id);
+        if (!prev) {
+          byId.set(s.id, s);
+          continue;
+        }
+        const prevTs = prev.updatedAt || prev.createdAt || '';
+        const curTs = s.updatedAt || s.createdAt || '';
+        if (curTs.localeCompare(prevTs) >= 0) byId.set(s.id, s);
+      }
+      return { ...store, sessions: Array.from(byId.values()) };
+    }
+
+    return store;
   } catch {
     return emptyStore();
   }
