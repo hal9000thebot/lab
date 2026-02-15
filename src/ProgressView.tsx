@@ -188,8 +188,13 @@ export function ProgressView(props: {
             {selectedSessions.map(s => (
               <div key={s.id} className="listRow">
                 <div>
-                  <div className="listTitle">{s.dateISO}</div>
-                  <div className="listSub">{Math.round(totalSessionVolumeKg(s))} kg·reps · {s.entries.length} exercises</div>
+                  <div className="listTitle">
+                    {s.dateISO} {s.isDraft ? <span className="badge" style={{ marginLeft: 8 }}>Draft</span> : null}
+                  </div>
+                  <div className="listSub">
+                    {Math.round(totalSessionVolumeKg(s))} kg·reps · {s.entries.length} exercises
+                    {s.comment ? <span> · “{s.comment.slice(0, 60)}{s.comment.length > 60 ? '…' : ''}”</span> : null}
+                  </div>
                 </div>
                 <div className="row" style={{ gap: 8 }}>
                   <button className="iconBtn" onClick={() => setViewSession(s)} aria-label="View session">View</button>
@@ -219,7 +224,15 @@ export function ProgressView(props: {
           </div>
           <div className="muted" style={{ marginTop: 6 }}>
             Total volume: {Math.round(totalSessionVolumeKg(viewSession))} kg·reps
+            {viewSession.isDraft ? <span> · Draft</span> : null}
           </div>
+
+          {viewSession.comment ? (
+            <div className="card" style={{ padding: 12, marginTop: 12 }}>
+              <div className="muted" style={{ marginBottom: 6 }}>Comment</div>
+              <div>{viewSession.comment}</div>
+            </div>
+          ) : null}
 
           <div className="grid" style={{ marginTop: 12, gap: 10 }}>
             {viewSession.entries.map(e => (

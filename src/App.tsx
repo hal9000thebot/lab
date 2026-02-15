@@ -51,6 +51,7 @@ type DraftSession = {
   templateId: string;
   templateName: string;
   entries: DraftExerciseEntry[];
+  comment: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -67,6 +68,15 @@ function App() {
 
   const [sessionDraft, setSessionDraft] = useState<DraftSession | null>(null);
   const [trackDate, setTrackDate] = useState(todayISODate());
+
+  // Autosave state
+  const [draftStatus, setDraftStatus] = useState<{ isSaved: boolean; lastSavedAt: string | null }>({
+    isSaved: false,
+    lastSavedAt: null
+  });
+  const dirtyRef = useRef(false);
+  const autosaveTimerRef = useRef<number | null>(null);
+  const autosaveIntervalRef = useRef<number | null>(null);
 
   const exercisesById = useMemo(() => new Map(store.exercises.map(e => [e.id, e])), [store.exercises]);
 
@@ -135,18 +145,22 @@ function App() {
       .filter(Boolean) as DraftExerciseEntry[];
 
     const ts = nowIso();
+    setDraftStatus({ isSaved: false, lastSavedAt: null });
+    dirtyRef.current = false;
+
     setSessionDraft({
       id: uid(),
       dateISO: trackDate,
       templateId: template.id,
       templateName: template.name,
       entries,
+      comment: '',
       createdAt: ts,
       updatedAt: ts
     });
   }
 
-  function saveDraftSession() {
+  function persistDraft(isDraft: boolean) {
     if (!sessionDraft) return;
 
     api.addSession({
@@ -154,6 +168,8 @@ function App() {
       dateISO: sessionDraft.dateISO,
       templateId: sessionDraft.templateId,
       templateName: sessionDraft.templateName,
+      comment: sessionDraft.comment.trim() || undefined,
+      isDraft,
       entries: sessionDraft.entries.map(e => ({
         exerciseId: e.exerciseId,
         exerciseName: e.exerciseName,
@@ -165,12 +181,49 @@ function App() {
       }))
     });
 
+    const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setDraftStatus({ isSaved: true, lastSavedAt: ts });
+    dirtyRef.current = false;
+  }
+
+  function finishWorkout() {
+    if (!sessionDraft) return;
+    persistDraft(false);
     setSessionDraft(null);
     setTab('Progress');
   }
 
+  function markDirty() {
+    dirtyRef.current = true;
+  }
+
+  function scheduleAutosave() {
+    if (!sessionDraft) return;
+
+    // Clear old timer
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+
+    // After 20s of inactivity, autosave if dirty.
+    autosaveTimerRef.current = window.setTimeout(() => {
+      if (!sessionDraft) return;
+      if (!dirtyRef.current) return;
+      persistDraft(true);
+    }, 20_000);
+
+    // Safety interval: every 5 minutes, if dirty.
+    if (!autosaveIntervalRef.current) {
+      autosaveIntervalRef.current = window.setInterval(() => {
+        if (!sessionDraft) return;
+        if (!dirtyRef.current) return;
+        persistDraft(true);
+      }, 5 * 60_000);
+    }
+  }
+
   function updateDraftEntry(exerciseIndex: number, setIndex: number, field: 'reps' | 'weightKg', value: string) {
     if (!sessionDraft) return;
+    markDirty();
+    scheduleAutosave();
     setSessionDraft(d => {
       if (!d) return d;
       const entries = d.entries.map((e, idx) => {
@@ -184,9 +237,27 @@ function App() {
         });
         return { ...e, sets };
       });
-      return { ...d, entries };
+      return { ...d, entries, updatedAt: nowIso() };
     });
   }
+
+  function updateDraftComment(value: string) {
+    if (!sessionDraft) return;
+    markDirty();
+    scheduleAutosave();
+    setSessionDraft(d => (d ? { ...d, comment: value, updatedAt: nowIso() } : d));
+  }
+
+  // Cleanup autosave timers when leaving the draft.
+  useEffect(() => {
+    if (!sessionDraft) {
+      if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+      if (autosaveIntervalRef.current) window.clearInterval(autosaveIntervalRef.current);
+      autosaveIntervalRef.current = null;
+      dirtyRef.current = false;
+    }
+  }, [sessionDraft]);
 
   function renderTrack() {
     const canStart = Boolean(activeTemplate);
@@ -333,26 +404,48 @@ function App() {
               ))}
             </div>
 
-            <div className="row wrap" style={{ marginTop: 14 }}>
-              <button
-                className="primary"
-                onClick={() => {
-                  const ok = confirm('Save this session?');
-                  if (ok) saveDraftSession();
-                }}
-              >
-                Save session
-              </button>
-              <button
-                className="danger"
-                onClick={() => {
-                  const ok = confirm('Discard this draft session?');
-                  if (ok) setSessionDraft(null);
-                }}
-              >
-                Discard
-              </button>
-              <span className="muted">You can edit saved sessions from Progress.</span>
+            <div className="card" style={{ padding: 12, marginTop: 14 }}>
+              <div className="muted" style={{ marginBottom: 6 }}>Comment (optional)</div>
+              <textarea
+                value={sessionDraft.comment}
+                onChange={e => updateDraftComment(e.target.value)}
+                placeholder="1–2 sentences about the workout…"
+                rows={3}
+                style={{ width: '100%', resize: 'vertical' }}
+              />
+            </div>
+
+            <div className="row wrap" style={{ marginTop: 14, justifyContent: 'space-between' }}>
+              <div className="muted">
+                {draftStatus.isSaved ? `Draft saved${draftStatus.lastSavedAt ? ` · ${draftStatus.lastSavedAt}` : ''}` : 'Not saved yet'}
+              </div>
+
+              <div className="row wrap" style={{ gap: 10 }}>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    const ok = confirm('Finish this workout?');
+                    if (ok) finishWorkout();
+                  }}
+                >
+                  Finish workout
+                </button>
+                <button
+                  className="danger"
+                  onClick={() => {
+                    const ok = confirm('Discard this draft session?');
+                    if (!ok) return;
+                    if (draftStatus.isSaved && sessionDraft) api.deleteSession(sessionDraft.id);
+                    setSessionDraft(null);
+                  }}
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+
+            <div className="muted" style={{ marginTop: 8 }}>
+              Autosaves after 20s of inactivity (and every 5 min while you type).
             </div>
           </div>
         )}
@@ -605,8 +698,12 @@ function App() {
         onEditSession={(s) => {
           setTrackDate(s.dateISO);
           setActiveTemplateId(s.templateId);
+          setDraftStatus({ isSaved: true, lastSavedAt: null });
+          dirtyRef.current = false;
+
           setSessionDraft({
             ...s,
+            comment: s.comment ?? '',
             entries: s.entries.map(e => ({
               exerciseId: e.exerciseId,
               exerciseName: e.exerciseName,

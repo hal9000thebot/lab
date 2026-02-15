@@ -41,6 +41,10 @@ export type WorkoutSession = {
   templateId: Id;
   templateName: string; // snapshot
   entries: SessionExerciseEntry[];
+  /** Optional user note for the whole workout */
+  comment?: string;
+  /** Draft sessions are autosaved but not explicitly finished */
+  isDraft?: boolean;
   createdAt: string;
   updatedAt: string;
 };

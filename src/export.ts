@@ -28,6 +28,8 @@ export function exportSessionsCsv(sessions: WorkoutSession[]) {
   const header = [
     'date',
     'template',
+    'isDraft',
+    'comment',
     'exercise',
     'setIndex',
     'reps',
@@ -42,6 +44,8 @@ export function exportSessionsCsv(sessions: WorkoutSession[]) {
         rows.push([
           s.dateISO,
           s.templateName,
+          s.isDraft ? 'true' : 'false',
+          s.comment ?? '',
           e.exerciseName,
           String(idx + 1),
           set.reps == null ? '' : String(set.reps),
