@@ -95,6 +95,9 @@ h2 {
 }
 
 .card {
+  /* Allow cards to shrink within CSS grid on small screens (fix overflow on iPhone). */
+  min-width: 0;
+
   /* Liquid glass */
   background:
     radial-gradient(120% 120% at 10% 0%, rgba(255,255,255,0.16), rgba(255,255,255,0.06) 45%, rgba(255,255,255,0.03) 70%),

@@ -55,8 +55,13 @@ export function MiniLineChart(props: {
         </span>
       </div>
 
-      <div style={{ marginTop: 10, overflowX: 'auto' }}>
-        <svg width={Math.max(W, points.length * 36)} height={H} viewBox={`0 0 ${Math.max(W, points.length * 36)} ${H}`}>
+      <div style={{ marginTop: 10, overflowX: 'auto', width: '100%', maxWidth: '100%' }}>
+        <svg
+          style={{ display: 'block' }}
+          width={Math.max(W, points.length * 36)}
+          height={H}
+          viewBox={`0 0 ${Math.max(W, points.length * 36)} ${H}`}
+        >
           <defs>
             <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stopColor={stroke} stopOpacity={0.30} />
