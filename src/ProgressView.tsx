@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Exercise, WorkoutSession, WorkoutTemplate } from './models';
 import { MiniLineChart } from './MiniLineChart';
-import { formatKg, setVolumeKg } from './utils';
+import { formatDurationMinutes, formatKg, setVolumeKg } from './utils';
 
 function totalSessionVolumeKg(session: WorkoutSession) {
   return session.entries.reduce((sum, e) => sum + e.sets.reduce((s2, set) => s2 + setVolumeKg(set), 0), 0);
@@ -62,6 +62,20 @@ export function ProgressView(props: {
 
   const last10Sessions = useMemo(() => selectedSessions.slice(0, 10).reverse(), [selectedSessions]);
   const lastSessionDate = selectedSessions[0]?.dateISO ?? '';
+
+  const avgDurationLast4w = useMemo(() => {
+    const now = Date.now();
+    const fourWeeksAgo = now - 28 * 24 * 60 * 60 * 1000;
+    const recent = selectedSessions.filter(s => {
+      const ts = s.sessionEndMs ?? s.sessionStartMs;
+      return typeof ts === 'number' && ts >= fourWeeksAgo;
+    });
+    const durations = recent
+      .map(s => s.totalDurationMs)
+      .filter((d): d is number => typeof d === 'number' && d > 0);
+    if (!durations.length) return null;
+    return durations.reduce((a, b) => a + b, 0) / durations.length;
+  }, [selectedSessions]);
 
   const workoutVolumePoints = useMemo(
     () =>
@@ -130,6 +144,9 @@ export function ProgressView(props: {
             <div className="card">
               <div className="kpi"><span className="muted">Avg volume (last 10)</span><strong>{workoutVolumePoints.length ? Math.round(workoutVolumePoints.reduce((s, p) => s + (p.y ?? 0), 0) / workoutVolumePoints.length) : 0}</strong><span className="muted">kg·reps</span></div>
             </div>
+            <div className="card">
+              <div className="kpi"><span className="muted">Avg time (last 4w)</span><strong>{avgDurationLast4w == null ? '—' : formatDurationMinutes(avgDurationLast4w)}</strong></div>
+            </div>
           </div>
 
           <MiniLineChart label="Total volume (last 10 sessions)" suffix="" points={workoutVolumePoints} />
@@ -193,6 +210,7 @@ export function ProgressView(props: {
                   </div>
                   <div className="listSub">
                     {Math.round(totalSessionVolumeKg(s))} kg·reps · {s.entries.length} exercises
+                    {typeof s.totalDurationMs === 'number' && s.totalDurationMs > 0 ? <span> · {formatDurationMinutes(s.totalDurationMs)}</span> : null}
                     {s.comment ? <span> · “{s.comment.slice(0, 60)}{s.comment.length > 60 ? '…' : ''}”</span> : null}
                   </div>
                 </div>
@@ -224,6 +242,7 @@ export function ProgressView(props: {
           </div>
           <div className="muted" style={{ marginTop: 6 }}>
             Total volume: {Math.round(totalSessionVolumeKg(viewSession))} kg·reps
+            {typeof viewSession.totalDurationMs === 'number' && viewSession.totalDurationMs > 0 ? <span> · Total time: {formatDurationMinutes(viewSession.totalDurationMs)}</span> : null}
             {viewSession.isDraft ? <span> · Draft</span> : null}
           </div>
 

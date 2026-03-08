@@ -5,7 +5,7 @@ import type { WorkoutSession, WorkoutTemplate } from './models';
 import { exportJson, exportSessionsCsv } from './export';
 import { ProgressView } from './ProgressView';
 import { useWorkoutStore } from './storeHook';
-import { clampInt, formatKg, nowIso, parseNumberOrNull, setVolumeKg, todayISODate, uid } from './utils';
+import { clampInt, formatDurationMs, formatDurationMinutes, formatKg, nowIso, parseNumberOrNull, setVolumeKg, todayISODate, uid } from './utils';
 
 import {
   Dumbbell,
@@ -52,6 +52,9 @@ type DraftSession = {
   templateName: string;
   entries: DraftExerciseEntry[];
   comment: string;
+  sessionStartMs?: number;
+  sessionEndMs?: number;
+  totalDurationMs?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -77,6 +80,8 @@ function App() {
   const dirtyRef = useRef(false);
   const autosaveTimerRef = useRef<number | null>(null);
   const autosaveIntervalRef = useRef<number | null>(null);
+  const [timerNowMs, setTimerNowMs] = useState(() => Date.now());
+  const [lastFinished, setLastFinished] = useState<null | { templateName: string; dateISO: string; totalDurationMs: number }>(null);
 
   const exercisesById = useMemo(() => new Map(store.exercises.map(e => [e.id, e])), [store.exercises]);
 
@@ -145,32 +150,44 @@ function App() {
       .filter(Boolean) as DraftExerciseEntry[];
 
     const ts = nowIso();
+    const startedAt = Date.now();
     setDraftStatus({ isSaved: false, lastSavedAt: null });
     dirtyRef.current = false;
 
-    setSessionDraft({
+    const draft: DraftSession = {
       id: uid(),
       dateISO: trackDate,
       templateId: template.id,
       templateName: template.name,
       entries,
       comment: '',
+      sessionStartMs: startedAt,
       createdAt: ts,
       updatedAt: ts
-    });
+    };
+
+    setLastFinished(null);
+    setSessionDraft(draft);
+
+    // Persist immediately so crashes/app closes still retain sessionStart.
+    persistDraft(true, draft);
   }
 
-  function persistDraft(isDraft: boolean) {
-    if (!sessionDraft) return;
+  function persistDraft(isDraft: boolean, override?: DraftSession) {
+    const draft = override ?? sessionDraft;
+    if (!draft) return;
 
     api.addSession({
-      id: sessionDraft.id,
-      dateISO: sessionDraft.dateISO,
-      templateId: sessionDraft.templateId,
-      templateName: sessionDraft.templateName,
-      comment: sessionDraft.comment.trim() || undefined,
+      id: draft.id,
+      dateISO: draft.dateISO,
+      templateId: draft.templateId,
+      templateName: draft.templateName,
+      comment: draft.comment.trim() || undefined,
       isDraft,
-      entries: sessionDraft.entries.map(e => ({
+      sessionStartMs: draft.sessionStartMs,
+      sessionEndMs: draft.sessionEndMs,
+      totalDurationMs: draft.totalDurationMs,
+      entries: draft.entries.map(e => ({
         exerciseId: e.exerciseId,
         exerciseName: e.exerciseName,
         targetReps: e.targetReps,
@@ -188,7 +205,15 @@ function App() {
 
   function finishWorkout() {
     if (!sessionDraft) return;
-    persistDraft(false);
+    const startMs = sessionDraft.sessionStartMs ?? Date.now();
+    const endMs = Date.now();
+    const completed: DraftSession = {
+      ...sessionDraft,
+      sessionEndMs: endMs,
+      totalDurationMs: Math.max(0, endMs - startMs)
+    };
+    persistDraft(false, completed);
+    setLastFinished({ templateName: completed.templateName, dateISO: completed.dateISO, totalDurationMs: completed.totalDurationMs ?? 0 });
     setSessionDraft(null);
     setTab('Progress');
   }
@@ -247,6 +272,15 @@ function App() {
     scheduleAutosave();
     setSessionDraft(d => (d ? { ...d, comment: value, updatedAt: nowIso() } : d));
   }
+
+  // Live session timer (updates once per second while a session is in progress)
+  useEffect(() => {
+    if (!sessionDraft?.sessionStartMs) return;
+    if (sessionDraft.sessionEndMs) return;
+    setTimerNowMs(Date.now());
+    const id = window.setInterval(() => setTimerNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [sessionDraft?.id, sessionDraft?.sessionStartMs, sessionDraft?.sessionEndMs]);
 
   // Cleanup autosave timers when leaving the draft.
   useEffect(() => {
@@ -362,7 +396,12 @@ function App() {
         {sessionDraft && (
           <div className="card">
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0 }}>Session draft</h2>
+              <div className="row" style={{ gap: 10, alignItems: 'baseline' }}>
+                <h2 style={{ margin: 0 }}>Session draft</h2>
+                {sessionDraft.sessionStartMs && !sessionDraft.sessionEndMs ? (
+                  <span className="badge">⏱️ {formatDurationMs(timerNowMs - sessionDraft.sessionStartMs)}</span>
+                ) : null}
+              </div>
               <span className="badge">{sessionDraft.templateName} · {sessionDraft.dateISO}</span>
             </div>
             <div className="muted" style={{ marginTop: 6 }}>
@@ -690,7 +729,17 @@ function App() {
 
   function renderProgress() {
     return (
-      <ProgressView
+      <>
+        {lastFinished ? (
+          <div className="card" style={{ marginBottom: 14 }}>
+            <h2 style={{ marginTop: 0 }}>Workout complete</h2>
+            <div className="muted">{lastFinished.templateName} · {lastFinished.dateISO}</div>
+            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 700 }}>
+              Total time: {formatDurationMinutes(lastFinished.totalDurationMs)}
+            </div>
+          </div>
+        ) : null}
+        <ProgressView
         templates={templatesSorted}
         sessionsByTemplate={sessionsByTemplate}
         exercisesById={exercisesById as any}
@@ -718,6 +767,7 @@ function App() {
         }}
         onDeleteSession={(id) => api.deleteSession(id)}
       />
+      </>
     );
   }
 

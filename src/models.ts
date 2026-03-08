@@ -45,6 +45,13 @@ export type WorkoutSession = {
   comment?: string;
   /** Draft sessions are autosaved but not explicitly finished */
   isDraft?: boolean;
+
+  /** Passive workout time tracking (ms since epoch). Optional for backwards compatibility. */
+  sessionStartMs?: number;
+  sessionEndMs?: number;
+  /** Convenience field: sessionEndMs - sessionStartMs */
+  totalDurationMs?: number;
+
   createdAt: string;
   updatedAt: string;
 };

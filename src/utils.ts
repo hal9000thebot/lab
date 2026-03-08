@@ -39,3 +39,18 @@ export function formatKg(n: number | null | undefined) {
 export function setVolumeKg(entry: { reps: number | null; weightKg: number | null }) {
   return (entry.reps ?? 0) * (entry.weightKg ?? 0);
 }
+
+export function formatDurationMs(ms: number) {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+export function formatDurationMinutes(ms: number) {
+  const minutes = Math.round(Math.max(0, ms) / 60000);
+  return `${minutes} min`;
+}
