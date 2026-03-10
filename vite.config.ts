@@ -2,7 +2,6 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { execSync } from 'node:child_process'
-import fs from 'node:fs'
 
 function getBuildMeta() {
   let sha = 'dev';
@@ -12,18 +11,9 @@ function getBuildMeta() {
     // ignore
   }
 
-  let releaseName = 'unreleased';
-  try {
-    const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
-    releaseName = pkg.releaseName ?? releaseName;
-  } catch {
-    // ignore
-  }
-
   return {
     version: process.env.npm_package_version ?? '0.0.0',
     sha,
-    releaseName,
     buildTime: new Date().toISOString(),
   };
 }
@@ -36,7 +26,6 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(meta.version),
     __APP_SHA__: JSON.stringify(meta.sha),
-    __RELEASE_NAME__: JSON.stringify(meta.releaseName),
     __BUILD_TIME__: JSON.stringify(meta.buildTime),
   },
   plugins: [
