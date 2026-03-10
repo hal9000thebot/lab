@@ -855,7 +855,12 @@ function App() {
             <GymBroLogo size={30} />
           </div>
           <div className="appTopText">
-            <div className="appName">GymBro</div>
+            <div className="appName" style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <span>GymBro</span>
+              <span className="badge" title={`Build ${__RELEASE_NAME__} · ${__APP_VERSION__} · ${__APP_SHA__} · ${__BUILD_TIME__}`}>
+                {__RELEASE_NAME__} · {__APP_SHA__}
+              </span>
+            </div>
             <div className="appTag">minimal workout log (no bro-science)</div>
           </div>
         </div>
