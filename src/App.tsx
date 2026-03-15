@@ -119,6 +119,18 @@ function App() {
     return m;
   }, [store.sessions]);
 
+  const sessionsByExercise = useMemo(() => {
+    const m = new Map<string, WorkoutSession[]>();
+    for (const session of store.sessions) {
+      for (const entry of session.entries) {
+        if (!m.has(entry.exerciseId)) m.set(entry.exerciseId, []);
+        m.get(entry.exerciseId)!.push(session);
+      }
+    }
+    for (const arr of m.values()) arr.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
+    return m;
+  }, [store.sessions]);
+
   function startSessionFromTemplate(template: WorkoutTemplate) {
     const last = findLastSessionForTemplate(store.sessions, template.id);
 
@@ -751,6 +763,8 @@ function App() {
         <ProgressView
         templates={templatesSorted}
         sessionsByTemplate={sessionsByTemplate}
+        sessionsByExercise={sessionsByExercise}
+        allSessions={store.sessions}
         exercisesById={exercisesById as any}
         getTemplateById={api.getTemplateById}
         onEditSession={(s) => {

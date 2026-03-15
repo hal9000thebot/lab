@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Exercise, WorkoutSession, WorkoutTemplate } from './models';
 import { MiniLineChart } from './MiniLineChart';
 import { formatDurationMinutes, formatKg, setVolumeKg } from './utils';
+import { OTHER_TEMPLATES_ID, OTHER_TEMPLATES_NAME } from './models';
 
 function totalSessionVolumeKg(session: WorkoutSession) {
   return session.entries.reduce((sum, e) => sum + e.sets.reduce((s2, set) => s2 + setVolumeKg(set), 0), 0);
@@ -30,15 +31,16 @@ function buildExerciseTimeline(sessions: WorkoutSession[], exerciseId: string) {
 export function ProgressView(props: {
   templates: WorkoutTemplate[];
   sessionsByTemplate: Map<string, WorkoutSession[]>;
+  sessionsByExercise: Map<string, WorkoutSession[]>;
+  allSessions: WorkoutSession[];
   exercisesById: Map<string, Exercise>;
   getTemplateById: (id: string) => WorkoutTemplate | undefined;
   onEditSession: (session: WorkoutSession) => void;
   onDeleteSession: (sessionId: string) => void;
 }) {
-  const { templates, sessionsByTemplate, exercisesById } = props;
+  const { templates, sessionsByTemplate, sessionsByExercise, allSessions, exercisesById } = props;
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => templates[0]?.id ?? '');
-  const selectedSessions = sessionsByTemplate.get(selectedTemplateId) ?? [];
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => templates[0]?.id ?? OTHER_TEMPLATES_ID);
   const selectedTemplate = props.getTemplateById(selectedTemplateId);
 
   const templateExercises: Exercise[] = useMemo(() => {
@@ -47,19 +49,46 @@ export function ProgressView(props: {
     return ids.map(id => exercisesById.get(id)).filter(Boolean) as Exercise[];
   }, [selectedTemplate, exercisesById]);
 
-  const [selectedExerciseId, setSelectedExerciseId] = useState<string>(() => templateExercises[0]?.id ?? '');
+  const otherExerciseIds = useMemo(() => {
+    return Array.from(sessionsByExercise.keys())
+      .filter(id => exercisesById.has(id))
+      .sort((a, b) => {
+        const aName = exercisesById.get(a)?.name ?? '';
+        const bName = exercisesById.get(b)?.name ?? '';
+        return aName.localeCompare(bName);
+      });
+  }, [sessionsByExercise, exercisesById]);
 
-  // Keep selected exercise valid when switching templates.
-  useMemo(() => {
-    if (!selectedExerciseId && templateExercises[0]?.id) setSelectedExerciseId(templateExercises[0].id);
-    if (selectedExerciseId && !templateExercises.some(e => e.id === selectedExerciseId)) {
-      setSelectedExerciseId(templateExercises[0]?.id ?? '');
+  const availableExerciseIds = selectedTemplateId === OTHER_TEMPLATES_ID ? otherExerciseIds : templateExercises.map(e => e.id);
+  const availableExercises = useMemo(
+    () => availableExerciseIds.map(id => exercisesById.get(id)).filter(Boolean) as Exercise[],
+    [availableExerciseIds, exercisesById]
+  );
+
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string>(() => availableExerciseIds[0] ?? '');
+
+  useEffect(() => {
+    if (templates.length === 0) {
+      if (selectedTemplateId !== OTHER_TEMPLATES_ID) setSelectedTemplateId(OTHER_TEMPLATES_ID);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTemplateId, templateExercises.map(e => e.id).join('|')]);
+    if (selectedTemplateId === OTHER_TEMPLATES_ID) return;
+    if (!templates.some(t => t.id === selectedTemplateId)) {
+      setSelectedTemplateId(templates[0]?.id ?? OTHER_TEMPLATES_ID);
+    }
+  }, [templates.map(t => t.id).join('|'), selectedTemplateId]);
 
-  // (exercise timeline is derived from last10 sessions below)
+  useEffect(() => {
+    if (!availableExerciseIds.length) {
+      setSelectedExerciseId('');
+      return;
+    }
+    if (!availableExerciseIds.includes(selectedExerciseId)) {
+      setSelectedExerciseId(availableExerciseIds[0]);
+    }
+  }, [availableExerciseIds.join('|'), selectedExerciseId]);
 
+  const selectedSessions = selectedTemplateId === OTHER_TEMPLATES_ID ? allSessions : sessionsByTemplate.get(selectedTemplateId) ?? [];
   const last10Sessions = useMemo(() => selectedSessions.slice(0, 10).reverse(), [selectedSessions]);
   const lastSessionDate = selectedSessions[0]?.dateISO ?? '';
 
@@ -86,10 +115,12 @@ export function ProgressView(props: {
     [last10Sessions]
   );
 
+  const exerciseSessions = selectedExerciseId ? sessionsByExercise.get(selectedExerciseId) ?? [] : [];
   const exerciseLast10 = useMemo(() => {
     if (!selectedExerciseId) return [];
-    return buildExerciseTimeline(last10Sessions, selectedExerciseId);
-  }, [last10Sessions, selectedExerciseId]);
+    const timeline = buildExerciseTimeline(exerciseSessions.slice(0, 10), selectedExerciseId);
+    return timeline.length ? [...timeline].reverse() : [];
+  }, [exerciseSessions, selectedExerciseId]);
 
   const exerciseLatest = exerciseLast10[exerciseLast10.length - 1];
 
@@ -113,6 +144,7 @@ export function ProgressView(props: {
 
   const [viewSession, setViewSession] = useState<WorkoutSession | null>(null);
 
+
   return (
     <div className="grid" style={{ gap: 14 }}>
       <div className="card">
@@ -121,8 +153,9 @@ export function ProgressView(props: {
           <div>
             <div className="muted">Workout template</div>
             <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)}>
+              <option value={OTHER_TEMPLATES_ID}>{OTHER_TEMPLATES_NAME}</option>
               {templates.length === 0 ? (
-                <option value="">No templates</option>
+                <option value="" disabled>No templates</option>
               ) : (
                 templates.map(t => (
                   <option key={t.id} value={t.id}>{t.name}</option>
@@ -154,10 +187,10 @@ export function ProgressView(props: {
           <div>
             <div className="muted">Exercise</div>
             <select value={selectedExerciseId} onChange={e => setSelectedExerciseId(e.target.value)}>
-              {templateExercises.length === 0 ? (
+              {availableExercises.length === 0 ? (
                 <option value="">No exercises</option>
               ) : (
-                templateExercises.map(ex => (
+                availableExercises.map(ex => (
                   <option key={ex.id} value={ex.id}>{ex.name}</option>
                 ))
               )}
