@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import { GymBroLogo } from './GymBroLogo';
 import type { WorkoutSession, WorkoutTemplate } from './models';
+import { FREE_ROAM_TEMPLATE_ID, FREE_ROAM_TEMPLATE_NAME } from './models';
 import { exportJson, exportSessionsCsv } from './export';
 import { ProgressView } from './ProgressView';
 import { useWorkoutStore } from './storeHook';
@@ -38,6 +39,24 @@ function findLastSessionForTemplate(sessions: WorkoutSession[], templateId: stri
     .sort((a, b) => b.dateISO.localeCompare(a.dateISO))[0];
 }
 
+function findLastSessionWithExercise(sessions: WorkoutSession[], exerciseId: string) {
+  return sessions
+    .filter(session => session.entries.some(entry => entry.exerciseId === exerciseId))
+    .sort((a, b) => b.dateISO.localeCompare(a.dateISO))[0];
+}
+
+function buildPrefilledDraftSets(entry: WorkoutSession['entries'][number] | undefined, fallbackSets = 3) {
+  const setCount = Math.max(entry?.sets.length ?? 0, fallbackSets);
+  return Array.from({ length: setCount }).map((_, idx) => {
+    const prev = entry?.sets[idx];
+    if (!prev) return { reps: '', weightKg: '' };
+    return {
+      reps: prev.reps == null ? '' : String(prev.reps),
+      weightKg: prev.weightKg == null ? '' : formatKg(prev.weightKg)
+    };
+  });
+}
+
 type DraftSetEntry = { reps: string; weightKg: string };
 type DraftExerciseEntry = {
   exerciseId: string;
@@ -66,8 +85,9 @@ function App() {
   const [tab, setTab] = useState<Tab>('Track');
 
   // Track state
-  const [activeTemplateId, setActiveTemplateId] = useState<string>(() => store.templates[0]?.id ?? '');
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(() => store.templates[0]?.id ?? FREE_ROAM_TEMPLATE_ID);
   const activeTemplate = api.getTemplateById(activeTemplateId);
+  const isFreeRoamActive = activeTemplateId === FREE_ROAM_TEMPLATE_ID;
 
   const [sessionDraft, setSessionDraft] = useState<DraftSession | null>(null);
   const [trackDate, setTrackDate] = useState(todayISODate());
@@ -97,17 +117,30 @@ function App() {
 
   const templatesSorted = useMemo(() => sortByName(store.templates), [store.templates]);
   const exercisesSorted = useMemo(() => sortByName(store.exercises), [store.exercises]);
+  const [freeRoamExerciseId, setFreeRoamExerciseId] = useState<string>(() => exercisesSorted[0]?.id ?? '');
+
+  useEffect(() => {
+    if (exercisesSorted.length === 0) {
+      if (freeRoamExerciseId) setFreeRoamExerciseId('');
+      return;
+    }
+    if (!exercisesSorted.some(e => e.id === freeRoamExerciseId)) {
+      setFreeRoamExerciseId(exercisesSorted[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercisesSorted.map(e => e.id).join('|'), freeRoamExerciseId]);
 
   // If store changes (e.g. after Import), ensure we have a valid selected template.
   useEffect(() => {
     if (store.templates.length === 0) {
-      if (activeTemplateId) setActiveTemplateId('');
+      if (activeTemplateId !== FREE_ROAM_TEMPLATE_ID) setActiveTemplateId(FREE_ROAM_TEMPLATE_ID);
       return;
     }
+    if (activeTemplateId === FREE_ROAM_TEMPLATE_ID) return;
     const exists = store.templates.some(t => t.id === activeTemplateId);
     if (!exists) setActiveTemplateId(store.templates[0]!.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.templates.length, store.templates.map(t => t.id).join('|')]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.templates.length, store.templates.map(t => t.id).join('|'), activeTemplateId]);
 
   const sessionsByTemplate = useMemo(() => {
     const m = new Map<string, WorkoutSession[]>();
@@ -116,6 +149,18 @@ function App() {
       m.get(s.templateId)!.push(s);
     }
     for (const [, arr] of m) arr.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
+    return m;
+  }, [store.sessions]);
+
+  const sessionsByExercise = useMemo(() => {
+    const m = new Map<string, WorkoutSession[]>();
+    for (const session of store.sessions) {
+      for (const entry of session.entries) {
+        if (!m.has(entry.exerciseId)) m.set(entry.exerciseId, []);
+        m.get(entry.exerciseId)!.push(session);
+      }
+    }
+    for (const arr of m.values()) arr.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
     return m;
   }, [store.sessions]);
 
@@ -201,6 +246,46 @@ function App() {
     const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setDraftStatus({ isSaved: true, lastSavedAt: ts });
     dirtyRef.current = false;
+  }
+
+  function startFreeRoamSession() {
+    if (!exercisesSorted.length) return;
+    const ts = nowIso();
+    const startedAt = Date.now();
+    setDraftStatus({ isSaved: false, lastSavedAt: null });
+    dirtyRef.current = false;
+    const draft: DraftSession = {
+      id: uid(),
+      dateISO: trackDate,
+      templateId: FREE_ROAM_TEMPLATE_ID,
+      templateName: FREE_ROAM_TEMPLATE_NAME,
+      entries: [],
+      comment: '',
+      sessionStartMs: startedAt,
+      createdAt: ts,
+      updatedAt: ts
+    };
+    setLastFinished(null);
+    setSessionDraft(draft);
+    persistDraft(true, draft);
+  }
+
+  function addExerciseToDraft(exerciseId: string) {
+    if (!sessionDraft) return;
+    const exercise = exercisesById.get(exerciseId);
+    if (!exercise) return;
+    if (sessionDraft.entries.some(entry => entry.exerciseId === exerciseId)) return;
+    const prevSession = findLastSessionWithExercise(store.sessions, exerciseId);
+    const prevEntry = prevSession?.entries.find(entry => entry.exerciseId === exerciseId);
+    const newEntry: DraftExerciseEntry = {
+      exerciseId,
+      exerciseName: exercise.name,
+      targetReps: prevEntry?.targetReps ?? '',
+      sets: buildPrefilledDraftSets(prevEntry)
+    };
+    markDirty();
+    scheduleAutosave();
+    setSessionDraft(d => (d ? { ...d, entries: [...d.entries, newEntry], updatedAt: nowIso() } : d));
   }
 
   function finishWorkout() {
@@ -294,7 +379,7 @@ function App() {
   }, [sessionDraft]);
 
   function renderTrack() {
-    const canStart = Boolean(activeTemplate);
+    const canStart = Boolean(activeTemplate) || isFreeRoamActive;
     const lastSession = store.sessions[0];
 
     const lastSessionSummary = (() => {
@@ -332,8 +417,9 @@ function App() {
                 value={activeTemplateId}
                 onChange={e => setActiveTemplateId(e.target.value)}
               >
+                <option value={FREE_ROAM_TEMPLATE_ID}>Free roam</option>
                 {templatesSorted.length === 0 ? (
-                  <option value="">No templates yet</option>
+                  <option value="" disabled>No templates yet</option>
                 ) : (
                   templatesSorted.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
@@ -346,11 +432,17 @@ function App() {
               <button
                 className="primary"
                 disabled={!canStart}
-                onClick={() => activeTemplate && startSessionFromTemplate(activeTemplate)}
+                onClick={() => {
+                  if (isFreeRoamActive) {
+                    startFreeRoamSession();
+                    return;
+                  }
+                  if (activeTemplate) startSessionFromTemplate(activeTemplate);
+                }}
               >
                 Start session
               </button>
-              {activeTemplate && store.sessions.some(s => s.templateId === activeTemplate.id) && (
+              {!isFreeRoamActive && activeTemplate && store.sessions.some(s => s.templateId === activeTemplate.id) && (
                 <span className="pill">Prefills from last session</span>
               )}
             </div>
@@ -409,6 +501,21 @@ function App() {
             </div>
 
             <div className="grid" style={{ marginTop: 12, gap: 12 }}>
+              {isFreeRoamActive && (
+                <div className="card" style={{ padding: 12, marginTop: 6 }}><div className="muted">Add exercise</div><div className="grid two" style={{ marginTop: 8, gap: 8 }}><select value={freeRoamExerciseId} onChange={e => setFreeRoamExerciseId(e.target.value)} disabled={!exercisesSorted.length}>
+                    {exercisesSorted.map(ex => (
+                      <option key={ex.id} value={ex.id}>{ex.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="primary"
+                    disabled={!freeRoamExerciseId || (sessionDraft && sessionDraft.entries.some(entry => entry.exerciseId === freeRoamExerciseId))}
+                    onClick={() => freeRoamExerciseId && addExerciseToDraft(freeRoamExerciseId)}
+                  >
+                    Add exercise
+                  </button>
+                </div></div>
+              )}
               {sessionDraft.entries.map((entry, eIdx) => (
                 <div key={entry.exerciseId} className="card" style={{ padding: 12 }}>
                   <div className="row wrap" style={{ justifyContent: 'space-between' }}>
@@ -751,6 +858,8 @@ function App() {
         <ProgressView
         templates={templatesSorted}
         sessionsByTemplate={sessionsByTemplate}
+        sessionsByExercise={sessionsByExercise}
+        allSessions={store.sessions}
         exercisesById={exercisesById as any}
         getTemplateById={api.getTemplateById}
         onEditSession={(s) => {

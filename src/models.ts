@@ -62,3 +62,8 @@ export type StoreV1 = {
   templates: WorkoutTemplate[];
   sessions: WorkoutSession[];
 };
+
+export const FREE_ROAM_TEMPLATE_ID = 'free-roam';
+export const FREE_ROAM_TEMPLATE_NAME = 'Free roam';
+export const OTHER_TEMPLATES_ID = 'others';
+export const OTHER_TEMPLATES_NAME = 'Others';
