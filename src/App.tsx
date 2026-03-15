@@ -666,8 +666,17 @@ function App() {
                           <div className="muted">Sets</div>
                           <input
                             inputMode="numeric"
-                            value={String(r.setsPlanned)}
-                            onChange={e => updateTemplateRow(r.id, { setsPlanned: Number(e.target.value) || 1 })}
+                            value={r.setsPlanned === 0 ? '' : String(r.setsPlanned)}
+                            onChange={e => {
+                              const trimmed = e.target.value.trim();
+                              if (trimmed === '') {
+                                updateTemplateRow(r.id, { setsPlanned: 0 });
+                                return;
+                              }
+                              const parsed = Number(trimmed);
+                              if (!Number.isFinite(parsed)) return;
+                              updateTemplateRow(r.id, { setsPlanned: Math.max(0, Math.round(parsed)) });
+                            }}
                           />
                         </div>
                         <div>
